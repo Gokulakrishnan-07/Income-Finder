@@ -92,6 +92,12 @@
         <select class="field-input" id="dashboardMonth" aria-label="Select dashboard month"></select>
       </div>
 
+      <div class="metric-grid">
+        <article class="metric-card"><span class="metric-label">All-time income</span><strong id="allTimeIncome">₹0.00</strong><span class="metric-meta">Complete ledger</span></article>
+        <article class="metric-card"><span class="metric-label">Current month</span><strong id="currentMonthIncome">₹0.00</strong><span class="metric-meta">This month</span></article>
+        <article class="metric-card"><span class="metric-label">Selected records</span><strong id="selectedMonthRecords">0</strong><span class="metric-meta">In selected month</span></article>
+      </div>
+
       <div class="total-card">
         <div class="total-card-tag" id="dashboardMonthLabel">Selected Month</div>
         <div class="total-card-amount"><span class="rupee">₹</span><span id="totalIncome">0</span></div>
@@ -121,6 +127,17 @@
           </div>
           <div class="chart-wrap chart-wrap--pie"><canvas id="chartCategoryPie"></canvas></div>
         </div>
+      </div>
+
+      <div class="card-panel recent-panel">
+        <div class="panel-head"><h2>Recent records</h2><button class="btn-link" data-view-link="history">View history <i class="bi bi-arrow-up-right"></i></button></div>
+        <div class="table-scroll">
+          <table class="ledger-table" id="recentTable">
+            <thead><tr><th>Date</th><th>Category</th><th class="text-end">Amount</th><th>Notes</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="empty-state" id="recentEmpty" hidden>No records yet. Add or import your first income.</p>
       </div>
 
     </section>
@@ -180,16 +197,21 @@
       <div class="card-panel import-panel">
         <div class="import-icon"><i class="bi bi-file-earmark-spreadsheet"></i></div>
         <h2>Upload your ledger</h2>
-        <p class="import-help">Choose an .xlsx or .xls file with Date, Category, Amount, and optional Notes or Description columns.</p>
-        <input class="visually-hidden" type="file" id="excelFile" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
+        <p class="import-help">Choose an .xlsx, .xls, or .csv file with Date, Category, Amount, and optional Notes or Description columns.</p>
+        <input class="visually-hidden" type="file" id="excelFile" accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv">
         <label class="btn-ghost import-file-button" for="excelFile"><i class="bi bi-folder2-open"></i> Choose Excel file</label>
         <p class="import-file-name" id="importFileName">No file selected</p>
         <div class="import-actions">
-          <button class="btn-primary" id="importExcelBtn" type="button" disabled><i class="bi bi-cloud-arrow-up"></i> Import records</button>
+          <button class="btn-primary" id="importExcelBtn" type="button" disabled><i class="bi bi-cloud-arrow-up"></i> Read and preview</button>
           <button class="btn-ghost" id="cancelImportBtn" type="button" hidden>Cancel</button>
         </div>
         <div class="form-toast" id="importToast" hidden role="status"></div>
         <div class="import-errors" id="importErrors" hidden></div>
+        <div class="import-preview" id="importPreview" hidden>
+          <div class="preview-stats"><span><b id="previewCount">0</b> records</span><span><b id="previewTotal">₹0.00</b> total</span><span id="previewRange">Date range unavailable</span></div>
+          <div class="table-scroll"><table class="ledger-table" id="previewTable"><thead><tr><th>Date</th><th>Category</th><th class="text-end">Amount</th><th>Notes</th></tr></thead><tbody></tbody></table></div>
+          <p class="preview-note">Previewing the first 10 valid rows. Existing records are kept; duplicates and invalid rows are skipped.</p>
+        </div>
       </div>
     </section>
 

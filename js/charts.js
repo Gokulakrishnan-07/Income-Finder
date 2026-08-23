@@ -6,7 +6,7 @@ const ScrapCharts = (() => {
   let pieChart = null;
   let comparisonChart = null;
 
-  const PALETTE = ["#B4862B", "#4C6B57", "#B24A2A", "#C47B28", "#B85C38", "#5C7896"];
+  const PALETTE = ["#2f8cff", "#5bd5ff", "#7b61ff", "#36d6a0", "#a879ff", "#6ca8ff"];
 
   function monthLabel(ym) {
     const [y, m] = ym.split("-");
@@ -31,7 +31,7 @@ const ScrapCharts = (() => {
       datasets: [{
         label: "Income",
         data: values,
-        backgroundColor: "#B24A2A",
+        backgroundColor: "#2f8cff",
         borderRadius: 6,
         maxBarThickness: 42
       }]
@@ -46,8 +46,8 @@ const ScrapCharts = (() => {
           label: (ctx) => "₹" + ctx.parsed.y.toLocaleString("en-IN")
         } } },
         scales: {
-          y: { beginAtZero: true, ticks: { callback: v => "₹" + v.toLocaleString("en-IN") } },
-          x: { grid: { display: false } }
+          y: { beginAtZero: true, ticks: { color: "#9cafc7", callback: v => "₹" + v.toLocaleString("en-IN") }, grid: { color: "rgba(148,201,255,.12)" } },
+          x: { ticks: { color: "#9cafc7" }, grid: { display: false } }
         }
       }
     });
@@ -57,7 +57,7 @@ const ScrapCharts = (() => {
     const totals = categories.map(c => records.filter(r => r.category === c.value).reduce((s, r) => s + Number(r.amount), 0));
     const data = {
       labels: categories.map(c => c.label),
-      datasets: [{ data: totals, backgroundColor: PALETTE, borderWidth: 2, borderColor: "#FFFDF8" }]
+      datasets: [{ data: totals, backgroundColor: PALETTE, borderWidth: 2, borderColor: "#0a1020" }]
     };
     if (pieChart) { pieChart.data = data; pieChart.update(); return; }
     pieChart = new Chart(canvasEl, {
@@ -65,7 +65,7 @@ const ScrapCharts = (() => {
       data,
       options: {
         responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { position: "bottom", labels: { boxWidth: 12, font: { size: 11 } } },
+        plugins: { legend: { position: "bottom", labels: { color: "#dbeaff", boxWidth: 12, font: { size: 11 } } },
           tooltip: { callbacks: { label: (ctx) => `${ctx.label}: ₹${ctx.parsed.toLocaleString("en-IN")}` } } }
       }
     });
@@ -78,9 +78,9 @@ const ScrapCharts = (() => {
       datasets: [{
         label: "Monthly Total",
         data: values,
-        borderColor: "#4C6B57",
-        backgroundColor: "rgba(76,107,87,.15)",
-        fill: true, tension: .3, pointBackgroundColor: "#4C6B57"
+        borderColor: "#5bd5ff",
+        backgroundColor: "rgba(91,213,255,.14)",
+        fill: true, tension: .3, pointBackgroundColor: "#5bd5ff"
       }]
     };
     if (comparisonChart) { comparisonChart.data = data; comparisonChart.update(); return; }
@@ -92,7 +92,7 @@ const ScrapCharts = (() => {
         plugins: { legend: { display: false }, tooltip: { callbacks: {
           label: (ctx) => "₹" + ctx.parsed.y.toLocaleString("en-IN")
         } } },
-        scales: { y: { beginAtZero: true, ticks: { callback: v => "₹" + v.toLocaleString("en-IN") } } }
+        scales: { y: { beginAtZero: true, ticks: { color: "#9cafc7", callback: v => "₹" + v.toLocaleString("en-IN") }, grid: { color: "rgba(148,201,255,.12)" } }, x: { ticks: { color: "#9cafc7" }, grid: { color: "rgba(148,201,255,.08)" } } }
       }
     });
   }

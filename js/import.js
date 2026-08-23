@@ -1,9 +1,9 @@
 /* Excel import helpers. Uses the existing SheetJS/XLSX browser build. */
 const ScrapImport = (() => {
-  const allowedExtensions = ["xlsx", "xls"];
+  const allowedExtensions = ["xlsx", "xls", "csv"];
 
   function normalize(value) {
-    return String(value ?? "").trim().toLocaleLowerCase().replace(/[^a-z0-9]/g, "");
+    return String(value ?? "").trim().toLocaleLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
   }
 
   function headerField(value) {
@@ -56,8 +56,9 @@ const ScrapImport = (() => {
   }
 
   async function readFile(file, categories, existingRecords) {
+    if (typeof XLSX === "undefined") throw new Error("Unable to import this file. The spreadsheet reader is unavailable.");
     const extension = String(file.name || "").split(".").pop().toLocaleLowerCase();
-    if (!allowedExtensions.includes(extension)) throw new Error("Please choose an .xlsx or .xls file.");
+    if (!allowedExtensions.includes(extension)) throw new Error("Please choose an .xlsx, .xls, or .csv file.");
     const workbook = XLSX.read(await file.arrayBuffer(), { type: "array", cellDates: true });
     const firstSheet = workbook.SheetNames?.[0];
     if (!firstSheet) throw new Error("The Excel file does not contain a worksheet.");

@@ -75,7 +75,7 @@
         showTracker();
       } catch (error) {
         loginError().textContent = error.code === "AUTH_CONFIG_MISSING"
-          ? "Authentication is not configured. Set AUTH_USERNAME, AUTH_PASSWORD, and SESSION_SECRET in Netlify."
+          ? "Authentication is not configured. Please configure the required Netlify environment variables."
           : "Invalid username or password.";
         loginError().hidden = false;
       } finally {

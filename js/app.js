@@ -5,12 +5,12 @@
   "use strict";
 
   const CATEGORIES = [
-    { value: "kottangushi", label: "கொட்டாங்குச்சி", icon: "bi-tree", color: "#B4862B" },
-    { value: "puliyankottai", label: "புளியங்கொட்டை", icon: "bi-flower1", color: "#4C6B57" },
-    { value: "irumbu_plastic", label: "இரும்பு / பிளாஸ்டிக்", icon: "bi-gear-wide-connected", color: "#B24A2A" },
-    { value: "pithalai", label: "பித்தளை", icon: "bi-award", color: "#C47B28" },
-    { value: "chembu", label: "செம்பு", icon: "bi-circle-half", color: "#B85C38" },
-    { value: "aluminium", label: "அலுமினியம்", icon: "bi-box-seam", color: "#5C7896" }
+    { value: "kottangushi", label: "கொட்டாங்குச்சி", icon: "bi-tree", color: "#2F8CFF" },
+    { value: "puliyankottai", label: "புளியங்கொட்டை", icon: "bi-flower1", color: "#5BD5FF" },
+    { value: "irumbu_plastic", label: "இரும்பு / பிளாஸ்டிக்", icon: "bi-gear-wide-connected", color: "#7B61FF" },
+    { value: "pithalai", label: "பித்தளை", icon: "bi-award", color: "#36D6A0" },
+    { value: "chembu", label: "செம்பு", icon: "bi-circle-half", color: "#A879FF" },
+    { value: "aluminium", label: "அலுமினியம்", icon: "bi-box-seam", color: "#6CA8FF" }
   ];
   const catByValue = Object.fromEntries(CATEGORIES.map(c => [c.value, c]));
 
@@ -149,9 +149,14 @@
     const selectedYm = selectedDashboardMonth || todayISO().slice(0, 7);
     const selectedRows = RECORDS.filter(r => monthKey(r.date) === selectedYm);
     const total = selectedRows.reduce((s, r) => s + Number(r.amount), 0);
+    const allTime = RECORDS.reduce((sum, row) => sum + Number(row.amount), 0);
+    const currentMonth = RECORDS.filter(row => monthKey(row.date) === todayISO().slice(0, 7)).reduce((sum, row) => sum + Number(row.amount), 0);
     document.getElementById("dashboardMonthLabel").textContent = monthLabelFull(selectedYm);
     document.getElementById("totalIncome").textContent = total.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     document.getElementById("totalEntries").textContent = selectedRows.length;
+    document.getElementById("allTimeIncome").textContent = fmtMoney(allTime);
+    document.getElementById("currentMonthIncome").textContent = fmtMoney(currentMonth);
+    document.getElementById("selectedMonthRecords").textContent = selectedRows.length;
 
     const grid = document.getElementById("categoryCards");
     grid.innerHTML = CATEGORIES.map((c, i) => {
@@ -165,6 +170,11 @@
         <span class="tag-count">${rows.length} ${rows.length === 1 ? "entry" : "entries"}</span>
       </div>`;
     }).join("");
+
+    const recent = RECORDS.slice().sort((a, b) => b.date.localeCompare(a.date) || Number(b.id || 0) - Number(a.id || 0)).slice(0, 6);
+    document.querySelector("#recentTable tbody").innerHTML = recent.map(row => rowHtml(row, false)).join("");
+    document.getElementById("recentEmpty").hidden = recent.length !== 0;
+    document.getElementById("recentTable").style.display = recent.length ? "" : "none";
 
     ScrapCharts.renderMonthly(document.getElementById("chartMonthly"), RECORDS);
     ScrapCharts.renderCategoryPie(document.getElementById("chartCategoryPie"), RECORDS, CATEGORIES);
@@ -295,9 +305,6 @@
       if (editId) startEdit(Number(editId));
       if (delId) openDeleteModal(Number(delId));
     });
-    document.querySelector("#recentTable tbody").addEventListener("click", (e) => {
-      // recent table has no actions, but keep for future-proofing
-    });
   }
 
   function renderHistory() {
@@ -357,46 +364,66 @@
     const importButton = document.getElementById("importExcelBtn");
     const cancelButton = document.getElementById("cancelImportBtn");
     let selectedFile = null;
+    let pendingImport = null;
 
     fileInput.addEventListener("change", () => {
       selectedFile = fileInput.files?.[0] || null;
+      pendingImport = null;
       document.getElementById("importFileName").textContent = selectedFile ? selectedFile.name : "No file selected";
       importButton.disabled = !selectedFile;
       cancelButton.hidden = !selectedFile;
+      importButton.innerHTML = '<i class="bi bi-cloud-arrow-up"></i> Read and preview';
+      document.getElementById("importPreview").hidden = true;
+      renderImportErrors([]);
       showImportMessage("");
     });
     cancelButton.addEventListener("click", () => {
       selectedFile = null;
+      pendingImport = null;
       fileInput.value = "";
       document.getElementById("importFileName").textContent = "No file selected";
       importButton.disabled = true;
       cancelButton.hidden = true;
+      importButton.innerHTML = '<i class="bi bi-cloud-arrow-up"></i> Read and preview';
+      document.getElementById("importPreview").hidden = true;
+      renderImportErrors([]);
       showImportMessage("");
     });
     importButton.addEventListener("click", async () => {
       if (!selectedFile) return;
       importButton.disabled = true;
       importButton.innerHTML = '<i class="bi bi-arrow-repeat"></i> Reading file…';
-      showImportMessage("");
+      showImportMessage(pendingImport ? "Saving imported records…" : "Reading Excel file…", true);
       try {
-        const result = await ScrapImport.readFile(selectedFile, CATEGORIES, RECORDS);
-        for (const record of result.records) await ScrapDB.add(record);
+        if (!pendingImport) {
+          pendingImport = await ScrapImport.readFile(selectedFile, CATEGORIES, RECORDS);
+          renderImportPreview(pendingImport.records);
+          renderImportErrors(pendingImport.errors);
+          if (!pendingImport.records.length) throw new Error("No valid records were found in this file.");
+          showImportMessage(`Ready to import ${pendingImport.records.length} valid record${pendingImport.records.length === 1 ? "" : "s"}.`, true);
+          importButton.innerHTML = '<i class="bi bi-check2-circle"></i> Confirm import';
+          return;
+        }
+        for (const record of pendingImport.records) await ScrapDB.add(record);
+        const importedTotal = pendingImport.records.reduce((sum, record) => sum + Number(record.amount), 0);
+        const errorText = pendingImport.errors.length ? ` ${pendingImport.errors.length} row${pendingImport.errors.length === 1 ? "" : "s"} skipped.` : "";
         await reload();
-        const errorText = result.errors.length ? ` ${result.errors.length} row${result.errors.length === 1 ? "" : "s"} skipped.` : "";
-        showImportMessage(`Imported ${result.records.length} record${result.records.length === 1 ? "" : "s"}.${errorText}`, !!result.records.length);
-        renderImportErrors(result.errors);
-        if (result.records.length) {
+        showImportMessage(`Import completed successfully: ${pendingImport.records.length} record${pendingImport.records.length === 1 ? "" : "s"} · ${fmtMoney(importedTotal)}.${errorText}`, true);
+        renderImportErrors(pendingImport.errors);
+        if (pendingImport.records.length) {
+          pendingImport = null;
           selectedFile = null;
           fileInput.value = "";
           document.getElementById("importFileName").textContent = "No file selected";
           cancelButton.hidden = true;
+          importButton.innerHTML = '<i class="bi bi-cloud-arrow-up"></i> Read and preview';
         }
       } catch (error) {
-        showImportMessage(error.message || "Could not import this Excel file.", false);
-        renderImportErrors([]);
+        pendingImport = null;
+        showImportMessage(error.message || "Unable to import this file. Please check the Excel format.", false);
       } finally {
         importButton.disabled = !selectedFile;
-        importButton.innerHTML = '<i class="bi bi-cloud-arrow-up"></i> Import records';
+        if (!pendingImport) importButton.innerHTML = '<i class="bi bi-cloud-arrow-up"></i> Read and preview';
       }
     });
   }
@@ -413,6 +440,16 @@
     if (!errors.length) { el.hidden = true; el.innerHTML = ""; return; }
     el.innerHTML = `<strong>Rows skipped</strong><ul>${errors.slice(0, 12).map(error => `<li>Row ${error.row}: ${escapeHtml(error.message)}</li>`).join("")}</ul>${errors.length > 12 ? `<p>And ${errors.length - 12} more row${errors.length - 12 === 1 ? "" : "s"}.</p>` : ""}`;
     el.hidden = false;
+  }
+
+  function renderImportPreview(records) {
+    const sorted = records.slice().sort((a, b) => a.date.localeCompare(b.date));
+    const total = records.reduce((sum, record) => sum + Number(record.amount), 0);
+    document.getElementById("previewCount").textContent = records.length;
+    document.getElementById("previewTotal").textContent = fmtMoney(total);
+    document.getElementById("previewRange").textContent = sorted.length ? `${fmtDate(sorted[0].date)} – ${fmtDate(sorted[sorted.length - 1].date)}` : "Date range unavailable";
+    document.querySelector("#previewTable tbody").innerHTML = records.slice(0, 10).map(row => rowHtml(row, false)).join("");
+    document.getElementById("importPreview").hidden = false;
   }
 
   function renderReports() {
