@@ -8,9 +8,7 @@
     { value: "kottangushi", label: "கொட்டாங்குச்சி", icon: "bi-tree", color: "#2F8CFF" },
     { value: "puliyankottai", label: "புளியங்கொட்டை", icon: "bi-flower1", color: "#5BD5FF" },
     { value: "irumbu_plastic", label: "இரும்பு / பிளாஸ்டிக்", icon: "bi-gear-wide-connected", color: "#7B61FF" },
-    { value: "pithalai", label: "பித்தளை", icon: "bi-award", color: "#36D6A0" },
-    { value: "chembu", label: "செம்பு", icon: "bi-circle-half", color: "#A879FF" },
-    { value: "aluminium", label: "அலுமினியம்", icon: "bi-box-seam", color: "#6CA8FF" }
+    { value: "metal", label: "Metal", icon: "bi-layers", color: "#36D6A0" }
   ];
   const catByValue = Object.fromEntries(CATEGORIES.map(c => [c.value, c]));
 

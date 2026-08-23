@@ -8,6 +8,7 @@ const ScrapDB = (() => {
   const DB_VERSION = 1;
   const STORE = "income";
   const LS_KEY = "scrapLedgerFallback";
+  const CATEGORY_MIGRATIONS = Object.freeze({ pithalai: "metal", chembu: "metal", aluminium: "metal" });
 
   let db = null;
   let useFallback = false;
@@ -47,6 +48,25 @@ const ScrapDB = (() => {
     catch { return []; }
   }
   function lsWrite(rows) { localStorage.setItem(LS_KEY, JSON.stringify(rows)); }
+
+  function migratedRows(rows) {
+    return rows.map(row => CATEGORY_MIGRATIONS[row.category]
+      ? { ...row, category: CATEGORY_MIGRATIONS[row.category] }
+      : row);
+  }
+
+  function persistIndexedMigrations(rows) {
+    const changed = rows.filter(row => CATEGORY_MIGRATIONS[row.category]);
+    if (!changed.length) return Promise.resolve(rows);
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE, "readwrite");
+      const store = transaction.objectStore(STORE);
+      changed.forEach(row => store.put({ ...row, category: CATEGORY_MIGRATIONS[row.category] }));
+      transaction.oncomplete = () => resolve(migratedRows(rows));
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error || new Error("Category migration was aborted."));
+    });
+  }
 
   async function init() {
     await openDB();
@@ -106,10 +126,15 @@ const ScrapDB = (() => {
 
   function getAll() {
     return new Promise((resolve, reject) => {
-      if (useFallback) return resolve(lsRead());
+      if (useFallback) {
+        const rows = lsRead();
+        const migrated = migratedRows(rows);
+        if (migrated.some((row, index) => row !== rows[index])) lsWrite(migrated);
+        return resolve(migrated);
+      }
       const store = tx("readonly");
       const req = store.getAll();
-      req.onsuccess = () => resolve(req.result || []);
+      req.onsuccess = () => persistIndexedMigrations(req.result || []).then(resolve).catch(reject);
       req.onerror = () => reject(req.error);
     });
   }

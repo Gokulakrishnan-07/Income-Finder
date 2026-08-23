@@ -48,7 +48,10 @@ const ScrapImport = (() => {
 
   function resolveCategory(value, categories) {
     const wanted = normalize(value);
-    return categories.find(category => normalize(category.value) === wanted || normalize(category.label) === wanted);
+    const direct = categories.find(category => normalize(category.value) === wanted || normalize(category.label) === wanted);
+    if (direct) return direct;
+    const legacyMetal = ["pithalai", "chembu", "aluminium", "பித்தளை", "செம்பு", "அலுமினியம்", "brass", "copper", "aluminum"].map(normalize);
+    return legacyMetal.includes(wanted) ? categories.find(category => category.value === "metal") : undefined;
   }
 
   function fingerprint(record) {
