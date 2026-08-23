@@ -32,7 +32,14 @@ function validSession(event) {
 
 function storeFor(user) {
   const userKey = crypto.createHash("sha256").update(user).digest("hex");
-  return { store: getStore({ name: STORE_NAME, consistency: "strong" }), key: `user/${userKey}/records` };
+  const siteID = process.env.NETLIFY_SITE_ID || process.env.SITE_ID;
+  const token = process.env.NETLIFY_AUTH_TOKEN || process.env.NETLIFY_BLOBS_TOKEN;
+  const options = { name: STORE_NAME, consistency: "strong" };
+  if (siteID && token) {
+    options.siteID = siteID;
+    options.token = token;
+  }
+  return { store: getStore(options), key: `user/${userKey}/records` };
 }
 
 function emptyData() { return { version: 1, nextId: 1, records: [] }; }
@@ -132,6 +139,9 @@ exports.handler = async (event) => {
     });
     return json(200, { ...update.result, records: update.data.records, dashboard: dashboard(update.data) });
   } catch (error) {
+    if (error?.name === "MissingBlobsEnvironmentError" || /environment has not been configured to use Netlify Blobs/i.test(error?.message || "")) {
+      return json(503, { error: "Shared cloud storage is not configured. Set NETLIFY_SITE_ID and NETLIFY_AUTH_TOKEN in Netlify, then redeploy.", code: "BLOBS_CONFIG_MISSING" });
+    }
     const status = error.message === "Record not found." ? 404 : 400;
     return json(status, { error: error.message || "Unable to sync data." });
   }

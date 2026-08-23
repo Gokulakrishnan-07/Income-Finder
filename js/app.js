@@ -51,9 +51,14 @@
 
     const statusEl = document.getElementById("dbStatus");
     try {
-      await ScrapDB.init();
-      statusEl.innerHTML = '<i class="bi bi-cloud-check"></i> <span>Cloud sync ready</span>';
-      document.getElementById("syncNotice").hidden = true;
+      const sync = await ScrapDB.init();
+      if (sync.shared) {
+        statusEl.innerHTML = '<i class="bi bi-cloud-check"></i> <span>Cloud sync ready</span>';
+        document.getElementById("syncNotice").hidden = true;
+      } else {
+        statusEl.innerHTML = '<i class="bi bi-hdd"></i> <span>Local data preserved</span>';
+        showSyncError(sync.error?.message || "Unable to sync data. Please check your internet connection and try again.");
+      }
     } catch (error) {
       statusEl.innerHTML = '<i class="bi bi-exclamation-triangle"></i> <span>Sync unavailable</span>';
       showSyncError(error.message);

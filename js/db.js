@@ -11,6 +11,7 @@ const ScrapDB = (() => {
   let useFallback = false;
   let serverRecords = [];
   let initialized = false;
+  let sharedReady = false;
 
   function openDB() {
     return new Promise((resolve) => {
@@ -45,11 +46,16 @@ const ScrapDB = (() => {
 
   function replaceLocalCache(rows) {
     try {
-      if (useFallback) { lsWrite(rows); return Promise.resolve(); }
+      if (useFallback) {
+        const existing = lsRead();
+        const byId = new Map(existing.map(row => [String(row.id), row]));
+        rows.forEach(row => byId.set(String(row.id), row));
+        lsWrite([...byId.values()]);
+        return Promise.resolve();
+      }
       return new Promise((resolve, reject) => {
         const transaction = db.transaction(STORE, "readwrite");
         const store = transaction.objectStore(STORE);
-        store.clear();
         rows.forEach(row => store.put(row));
         transaction.oncomplete = resolve;
         transaction.onerror = () => reject(transaction.error);
@@ -73,21 +79,53 @@ const ScrapDB = (() => {
   async function init() {
     await openDB();
     const localRows = await localRead();
-    let payload = await request("GET");
-    const migrationDone = localStorage.getItem(MIGRATION_KEY) === "complete";
-    if (localRows.length && !migrationDone) {
-      payload = await request("POST", { action: "import", records: localRows });
-      localStorage.setItem(MIGRATION_KEY, "complete");
-    } else if (!localRows.length) {
-      localStorage.setItem(MIGRATION_KEY, "complete");
+    let payload;
+    let migrationDone = false;
+    try {
+      payload = await request("GET");
+    } catch (error) {
+      serverRecords = localRows.slice();
+      initialized = true;
+      sharedReady = false;
+      return { usingFallback: localRows.length > 0, shared: false, migrated: false, error };
+    }
+
+    try {
+      migrationDone = localStorage.getItem(MIGRATION_KEY) === "complete";
+      if (localRows.length && !migrationDone) {
+        const migrationPayload = await request("POST", { action: "import", records: localRows });
+        const migratedRecords = migrationPayload.records || [];
+        const localTotal = localRows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+        const migratedTotal = migratedRecords.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+        if (migratedRecords.length < localRows.length || migratedTotal < localTotal) {
+          throw new Error("Local data migration could not be verified. Your local records were preserved and sync is paused.");
+        }
+        payload = migrationPayload;
+        localStorage.setItem(MIGRATION_KEY, "complete");
+      } else if (localRows.length && !payload.records?.length) {
+        throw new Error("Cloud storage returned no records while local records exist. Local data is preserved and sync is paused.");
+      } else if (!localRows.length) {
+        localStorage.setItem(MIGRATION_KEY, "complete");
+      }
+    } catch (error) {
+      serverRecords = localRows.slice();
+      initialized = true;
+      sharedReady = false;
+      return { usingFallback: localRows.length > 0, shared: false, migrated: false, error };
     }
     serverRecords = payload.records || [];
     initialized = true;
+    sharedReady = true;
     await replaceLocalCache(serverRecords).catch(() => {});
     return { usingFallback: false, shared: true, migrated: localRows.length > 0 && !migrationDone };
   }
 
   function ensureReady() {
+    if (!initialized) throw new Error("Shared data is not ready.");
+    if (!sharedReady) throw new Error("Cloud sync is unavailable. Your local data is available read-only until the connection is restored.");
+  }
+
+  function ensureInitialized() {
     if (!initialized) throw new Error("Shared data is not ready.");
   }
 
@@ -126,7 +164,7 @@ const ScrapDB = (() => {
   }
 
   function getAll() {
-    ensureReady();
+    ensureInitialized();
     return Promise.resolve(serverRecords.slice());
   }
 
