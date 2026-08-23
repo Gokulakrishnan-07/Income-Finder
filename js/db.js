@@ -1,143 +1,134 @@
-/* ============================================================
-   db.js — IndexedDB wrapper for Scrap Ledger
-   Store: "income" { id, date (YYYY-MM-DD), category, amount, notes, createdAt }
-   Falls back to localStorage automatically if IndexedDB is unavailable.
-   ============================================================ */
+/* Server-primary data client. IndexedDB/localStorage is retained only as a migration source/cache. */
 const ScrapDB = (() => {
   const DB_NAME = "ScrapLedgerDB";
   const DB_VERSION = 1;
   const STORE = "income";
   const LS_KEY = "scrapLedgerFallback";
-  const CATEGORY_MIGRATIONS = Object.freeze({ pithalai: "metal", chembu: "metal", aluminium: "metal" });
+  const MIGRATION_KEY = "scrapLedgerServerMigration";
+  const API = "/.netlify/functions/data";
 
   let db = null;
   let useFallback = false;
+  let serverRecords = [];
+  let initialized = false;
 
   function openDB() {
-    return new Promise((resolve, reject) => {
-      if (!("indexedDB" in window)) {
-        useFallback = true;
-        return resolve(null);
-      }
+    return new Promise((resolve) => {
+      if (!("indexedDB" in window)) { useFallback = true; return resolve(null); }
       const req = indexedDB.open(DB_NAME, DB_VERSION);
-
-      req.onupgradeneeded = (e) => {
-        const database = e.target.result;
+      req.onupgradeneeded = (event) => {
+        const database = event.target.result;
         if (!database.objectStoreNames.contains(STORE)) {
           const store = database.createObjectStore(STORE, { keyPath: "id", autoIncrement: true });
           store.createIndex("date", "date", { unique: false });
           store.createIndex("category", "category", { unique: false });
         }
       };
-
-      req.onsuccess = (e) => {
-        db = e.target.result;
-        resolve(db);
-      };
-
-      req.onerror = () => {
-        useFallback = true;
-        resolve(null);
-      };
+      req.onsuccess = event => { db = event.target.result; resolve(db); };
+      req.onerror = () => { useFallback = true; resolve(null); };
     });
   }
 
-  // ---------- localStorage fallback helpers ----------
   function lsRead() {
-    try { return JSON.parse(localStorage.getItem(LS_KEY)) || []; }
-    catch { return []; }
+    try { return JSON.parse(localStorage.getItem(LS_KEY)) || []; } catch (_) { return []; }
   }
   function lsWrite(rows) { localStorage.setItem(LS_KEY, JSON.stringify(rows)); }
 
-  function migratedRows(rows) {
-    return rows.map(row => CATEGORY_MIGRATIONS[row.category]
-      ? { ...row, category: CATEGORY_MIGRATIONS[row.category] }
-      : row);
+  function localRead() {
+    if (useFallback) return Promise.resolve(lsRead());
+    return new Promise((resolve, reject) => {
+      const request = db.transaction(STORE, "readonly").objectStore(STORE).getAll();
+      request.onsuccess = () => resolve(request.result || []);
+      request.onerror = () => reject(request.error);
+    });
   }
 
-  function persistIndexedMigrations(rows) {
-    const changed = rows.filter(row => CATEGORY_MIGRATIONS[row.category]);
-    if (!changed.length) return Promise.resolve(rows);
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction(STORE, "readwrite");
-      const store = transaction.objectStore(STORE);
-      changed.forEach(row => store.put({ ...row, category: CATEGORY_MIGRATIONS[row.category] }));
-      transaction.oncomplete = () => resolve(migratedRows(rows));
-      transaction.onerror = () => reject(transaction.error);
-      transaction.onabort = () => reject(transaction.error || new Error("Category migration was aborted."));
+  function replaceLocalCache(rows) {
+    try {
+      if (useFallback) { lsWrite(rows); return Promise.resolve(); }
+      return new Promise((resolve, reject) => {
+        const transaction = db.transaction(STORE, "readwrite");
+        const store = transaction.objectStore(STORE);
+        store.clear();
+        rows.forEach(row => store.put(row));
+        transaction.oncomplete = resolve;
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(transaction.error || new Error("Local cache update failed."));
+      });
+    } catch (error) { return Promise.reject(error); }
+  }
+
+  async function request(method, body) {
+    const response = await fetch(API, {
+      method,
+      credentials: "same-origin",
+      headers: body ? { "Content-Type": "application/json" } : undefined,
+      body: body ? JSON.stringify(body) : undefined
     });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || "Unable to sync data. Please check your internet connection and try again.");
+    return payload;
   }
 
   async function init() {
     await openDB();
-    return { usingFallback: useFallback };
+    const localRows = await localRead();
+    let payload = await request("GET");
+    const migrationDone = localStorage.getItem(MIGRATION_KEY) === "complete";
+    if (localRows.length && !migrationDone) {
+      payload = await request("POST", { action: "import", records: localRows });
+      localStorage.setItem(MIGRATION_KEY, "complete");
+    } else if (!localRows.length) {
+      localStorage.setItem(MIGRATION_KEY, "complete");
+    }
+    serverRecords = payload.records || [];
+    initialized = true;
+    await replaceLocalCache(serverRecords).catch(() => {});
+    return { usingFallback: false, shared: true, migrated: localRows.length > 0 && !migrationDone };
   }
 
-  function tx(mode) {
-    return db.transaction(STORE, mode).objectStore(STORE);
+  function ensureReady() {
+    if (!initialized) throw new Error("Shared data is not ready.");
   }
 
-  function add(record) {
-    return new Promise((resolve, reject) => {
-      if (useFallback) {
-        const rows = lsRead();
-        const id = rows.length ? Math.max(...rows.map(r => r.id)) + 1 : 1;
-        const row = { ...record, id };
-        rows.push(row);
-        lsWrite(rows);
-        return resolve(row);
-      }
-      const store = tx("readwrite");
-      const req = store.add(record);
-      req.onsuccess = () => resolve({ ...record, id: req.result });
-      req.onerror = () => reject(req.error);
-    });
+  async function syncResponse(payload) {
+    serverRecords = payload.records || serverRecords;
+    await replaceLocalCache(serverRecords).catch(() => {});
+    return payload;
   }
 
-  function update(record) {
-    return new Promise((resolve, reject) => {
-      if (useFallback) {
-        const rows = lsRead();
-        const idx = rows.findIndex(r => r.id === record.id);
-        if (idx > -1) rows[idx] = record;
-        lsWrite(rows);
-        return resolve(record);
-      }
-      const store = tx("readwrite");
-      const req = store.put(record);
-      req.onsuccess = () => resolve(record);
-      req.onerror = () => reject(req.error);
-    });
+  async function add(record) {
+    ensureReady();
+    const payload = await request("POST", { record });
+    await syncResponse(payload);
+    return payload.record || serverRecords[serverRecords.length - 1];
   }
 
-  function remove(id) {
-    return new Promise((resolve, reject) => {
-      if (useFallback) {
-        const rows = lsRead().filter(r => r.id !== id);
-        lsWrite(rows);
-        return resolve(true);
-      }
-      const store = tx("readwrite");
-      const req = store.delete(id);
-      req.onsuccess = () => resolve(true);
-      req.onerror = () => reject(req.error);
-    });
+  async function update(record) {
+    ensureReady();
+    const payload = await request("PUT", { id: record.id, record });
+    await syncResponse(payload);
+    return payload.record || record;
+  }
+
+  async function remove(id) {
+    ensureReady();
+    const payload = await request("DELETE", { id });
+    await syncResponse(payload);
+    return true;
+  }
+
+  async function importRecords(records) {
+    ensureReady();
+    const payload = await request("POST", { action: "import", records });
+    await syncResponse(payload);
+    return payload;
   }
 
   function getAll() {
-    return new Promise((resolve, reject) => {
-      if (useFallback) {
-        const rows = lsRead();
-        const migrated = migratedRows(rows);
-        if (migrated.some((row, index) => row !== rows[index])) lsWrite(migrated);
-        return resolve(migrated);
-      }
-      const store = tx("readonly");
-      const req = store.getAll();
-      req.onsuccess = () => persistIndexedMigrations(req.result || []).then(resolve).catch(reject);
-      req.onerror = () => reject(req.error);
-    });
+    ensureReady();
+    return Promise.resolve(serverRecords.slice());
   }
 
-  return { init, add, update, remove, getAll, get usingFallback() { return useFallback; } };
+  return { init, add, update, remove, import: importRecords, getAll, get usingFallback() { return false; } };
 })();

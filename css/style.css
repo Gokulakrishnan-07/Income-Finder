@@ -294,6 +294,7 @@ h1,h2,h3{ font-family: var(--font-display); margin:0; color:var(--ink); }
 .import-errors ul{ margin:6px 0 0; padding-left:20px; }
 .import-errors p{ margin:6px 0 0; }
 .history-summary{ margin:-2px 0 14px; color:var(--ink-soft); font-size:.88rem; font-weight:600; }
+.sync-notice{ margin:0 0 18px; padding:12px 16px; border-radius:14px; background:rgba(255,113,141,.14); border:1px solid rgba(255,113,141,.32); color:#ffb0bf; font-size:.86rem; font-weight:600; }
 @media (max-width:560px){
   .dashboard-filter{ max-width:none; padding:14px; }
   .import-actions{ flex-direction:column; }

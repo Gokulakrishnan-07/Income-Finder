@@ -51,12 +51,13 @@
 
     const statusEl = document.getElementById("dbStatus");
     try {
-      const { usingFallback } = await ScrapDB.init();
-      statusEl.innerHTML = usingFallback
-        ? '<i class="bi bi-hdd"></i> <span>Local storage</span>'
-        : '<i class="bi bi-hdd-stack-fill"></i> <span>IndexedDB ready</span>';
-    } catch {
-      statusEl.innerHTML = '<i class="bi bi-exclamation-triangle"></i> <span>Storage error</span>';
+      await ScrapDB.init();
+      statusEl.innerHTML = '<i class="bi bi-cloud-check"></i> <span>Cloud sync ready</span>';
+      document.getElementById("syncNotice").hidden = true;
+    } catch (error) {
+      statusEl.innerHTML = '<i class="bi bi-exclamation-triangle"></i> <span>Sync unavailable</span>';
+      showSyncError(error.message);
+      return;
     }
 
     document.getElementById("fDate").value = todayISO();
@@ -69,6 +70,12 @@
     renderDashboard();
     renderHistory();
     renderReports();
+  }
+
+  function showSyncError(message) {
+    const el = document.getElementById("syncNotice");
+    el.textContent = message || "Unable to sync data. Please check your internet connection and try again.";
+    el.hidden = false;
   }
 
   // ---------------- NAV ----------------
@@ -253,7 +260,8 @@
       resetForm();
       await reload();
     } catch (err) {
-      showToast("formToast", "Couldn't save — please try again.", true);
+      showToast("formToast", "Unable to sync data. Please check your internet connection and try again.", true);
+      showSyncError(err.message);
     }
   }
 
@@ -336,8 +344,12 @@
     document.getElementById("cancelDelete").addEventListener("click", closeDeleteModal);
     document.getElementById("confirmDelete").addEventListener("click", async () => {
       if (pendingDeleteId != null) {
-        await ScrapDB.remove(pendingDeleteId);
-        await reload();
+        try {
+          await ScrapDB.remove(pendingDeleteId);
+          await reload();
+        } catch (error) {
+          showSyncError(error.message);
+        }
       }
       closeDeleteModal();
     });
@@ -402,11 +414,13 @@
           importButton.innerHTML = '<i class="bi bi-check2-circle"></i> Confirm import';
           return;
         }
-        for (const record of pendingImport.records) await ScrapDB.add(record);
-        const importedTotal = pendingImport.records.reduce((sum, record) => sum + Number(record.amount), 0);
-        const errorText = pendingImport.errors.length ? ` ${pendingImport.errors.length} row${pendingImport.errors.length === 1 ? "" : "s"} skipped.` : "";
+        const syncResult = await ScrapDB.import(pendingImport.records);
+        const imported = syncResult.imported || [];
+        const importedTotal = imported.reduce((sum, record) => sum + Number(record.amount), 0);
+        const skipped = pendingImport.errors.length + (pendingImport.records.length - imported.length);
+        const errorText = skipped ? ` ${skipped} row${skipped === 1 ? "" : "s"} skipped.` : "";
         await reload();
-        showImportMessage(`Import completed successfully: ${pendingImport.records.length} record${pendingImport.records.length === 1 ? "" : "s"} · ${fmtMoney(importedTotal)}.${errorText}`, true);
+        showImportMessage(`Import completed successfully: ${imported.length} record${imported.length === 1 ? "" : "s"} · ${fmtMoney(importedTotal)}.${errorText}`, true);
         renderImportErrors(pendingImport.errors);
         if (pendingImport.records.length) {
           pendingImport = null;
