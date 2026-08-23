@@ -21,6 +21,31 @@
 </head>
 <body>
 
+<!-- ============ SIGN IN ============ -->
+<main class="auth-screen" id="authScreen" aria-labelledby="signInTitle">
+  <section class="auth-card">
+    <div class="auth-brand"><span class="brand-mark"><i class="bi bi-recycle"></i></span></div>
+    <p class="eyebrow">Scrap Ledger</p>
+    <h1 id="signInTitle">Welcome back</h1>
+    <p class="auth-subtitle">Sign in to access your private income tracker.</p>
+    <form id="signInForm" novalidate>
+      <label class="field-label" for="loginUsername">Username / Email</label>
+      <input class="field-input" id="loginUsername" name="username" type="email" autocomplete="username" required>
+      <div class="field-error" id="loginUsernameError"></div>
+      <label class="field-label" for="loginPassword">Password</label>
+      <div class="password-field">
+        <input class="field-input" id="loginPassword" name="password" type="password" autocomplete="current-password" required>
+        <button class="password-toggle" id="passwordToggle" type="button" aria-label="Show password"><i class="bi bi-eye"></i></button>
+      </div>
+      <div class="field-error" id="loginPasswordError"></div>
+      <div class="auth-error" id="loginError" role="alert" hidden></div>
+      <button class="btn-primary auth-submit" id="signInButton" type="submit"><i class="bi bi-box-arrow-in-right"></i> Sign In</button>
+    </form>
+  </section>
+</main>
+
+<div id="trackerApp" hidden>
+
 <!-- ============ TOP BAR ============ -->
 <header class="topbar">
   <button class="menu-toggle d-lg-none" id="menuToggle" aria-label="Open menu"><i class="bi bi-list"></i></button>
@@ -34,6 +59,7 @@
   <div class="topbar-status" id="dbStatus" title="Storage status">
     <i class="bi bi-hdd-stack"></i> <span>Loading…</span>
   </div>
+  <button class="btn-ghost topbar-logout" id="logoutBtn" type="button"><i class="bi bi-box-arrow-right"></i><span>Logout</span></button>
 </header>
 
 <div class="app-shell">
@@ -42,6 +68,7 @@
     <button class="navlink active" data-view="dashboard"><i class="bi bi-speedometer2"></i><span>Dashboard</span></button>
     <button class="navlink" data-view="add"><i class="bi bi-plus-circle"></i><span>Add Income</span></button>
     <button class="navlink" data-view="history"><i class="bi bi-journal-text"></i><span>History</span></button>
+    <button class="navlink" data-view="import"><i class="bi bi-file-earmark-arrow-up"></i><span>Import Excel</span></button>
     <button class="navlink" data-view="reports"><i class="bi bi-bar-chart-line"></i><span>Reports</span></button>
     <button class="navlink" data-view="export"><i class="bi bi-file-earmark-spreadsheet"></i><span>Export</span></button>
     <div class="sidenav-footer">
@@ -57,13 +84,18 @@
     <section class="view active" id="view-dashboard">
       <div class="view-head">
         <h1>Dashboard</h1>
-        <p class="view-sub">Today's tally at a glance</p>
+        <p class="view-sub">Monthly income at a glance</p>
+      </div>
+
+      <div class="dashboard-filter card-panel">
+        <label class="field-label" for="dashboardMonth">Select month</label>
+        <select class="field-input" id="dashboardMonth" aria-label="Select dashboard month"></select>
       </div>
 
       <div class="total-card">
-        <div class="total-card-tag">Total Income</div>
+        <div class="total-card-tag" id="dashboardMonthLabel">Selected Month</div>
         <div class="total-card-amount"><span class="rupee">₹</span><span id="totalIncome">0</span></div>
-        <div class="total-card-meta"><span id="totalEntries">0</span> entries logged</div>
+        <div class="total-card-meta"><span id="totalEntries">0</span> records logged</div>
         <svg class="total-card-scale" viewBox="0 0 120 60" aria-hidden="true">
           <line x1="60" y1="6" x2="60" y2="46" stroke="currentColor" stroke-width="2"/>
           <line x1="20" y1="16" x2="100" y2="16" stroke="currentColor" stroke-width="2"/>
@@ -91,19 +123,6 @@
         </div>
       </div>
 
-      <div class="card-panel">
-        <div class="panel-head">
-          <h2>Recent Entries</h2>
-          <button class="btn-link" data-view-link="history">View all <i class="bi bi-arrow-right"></i></button>
-        </div>
-        <div class="table-scroll">
-          <table class="ledger-table" id="recentTable">
-            <thead><tr><th>Date</th><th>Category</th><th class="text-end">Amount</th><th>Notes</th></tr></thead>
-            <tbody></tbody>
-          </table>
-        </div>
-        <p class="empty-state" id="recentEmpty" hidden>No entries yet. Add your first tally to see it here.</p>
-      </div>
     </section>
 
     <!-- ---------- ADD INCOME ---------- -->
@@ -152,6 +171,28 @@
       </div>
     </section>
 
+    <!-- ---------- IMPORT EXCEL ---------- -->
+    <section class="view" id="view-import">
+      <div class="view-head">
+        <h1>Import Excel</h1>
+        <p class="view-sub">Add historical income without retyping it.</p>
+      </div>
+      <div class="card-panel import-panel">
+        <div class="import-icon"><i class="bi bi-file-earmark-spreadsheet"></i></div>
+        <h2>Upload your ledger</h2>
+        <p class="import-help">Choose an .xlsx or .xls file with Date, Category, Amount, and optional Notes or Description columns.</p>
+        <input class="visually-hidden" type="file" id="excelFile" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
+        <label class="btn-ghost import-file-button" for="excelFile"><i class="bi bi-folder2-open"></i> Choose Excel file</label>
+        <p class="import-file-name" id="importFileName">No file selected</p>
+        <div class="import-actions">
+          <button class="btn-primary" id="importExcelBtn" type="button" disabled><i class="bi bi-cloud-arrow-up"></i> Import records</button>
+          <button class="btn-ghost" id="cancelImportBtn" type="button" hidden>Cancel</button>
+        </div>
+        <div class="form-toast" id="importToast" hidden role="status"></div>
+        <div class="import-errors" id="importErrors" hidden></div>
+      </div>
+    </section>
+
     <!-- ---------- HISTORY ---------- -->
     <section class="view" id="view-history">
       <div class="view-head">
@@ -175,6 +216,8 @@
             <i class="bi bi-sort-down" id="sortIcon"></i> Date
           </button>
         </div>
+
+        <div class="history-summary" id="historySummary">All records · ₹0.00</div>
 
         <div class="table-scroll">
           <table class="ledger-table" id="historyTable">
@@ -248,6 +291,7 @@
 
   </main>
 </div>
+</div>
 
 <!-- Delete confirm modal -->
 <div class="modal-backdrop-custom" id="confirmModal" hidden>
@@ -267,6 +311,8 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
 <!-- App scripts -->
+<script src="js/auth.js"></script>
+<script src="js/import.js"></script>
 <script src="js/db.js"></script>
 <script src="js/charts.js"></script>
 <script src="js/export.js"></script>

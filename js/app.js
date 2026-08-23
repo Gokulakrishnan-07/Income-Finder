@@ -7,13 +7,17 @@
   const CATEGORIES = [
     { value: "kottangushi", label: "கொட்டாங்குச்சி", icon: "bi-tree", color: "#B4862B" },
     { value: "puliyankottai", label: "புளியங்கொட்டை", icon: "bi-flower1", color: "#4C6B57" },
-    { value: "irumbu_plastic", label: "இரும்பு / பிளாஸ்டிக்", icon: "bi-gear-wide-connected", color: "#B24A2A" }
+    { value: "irumbu_plastic", label: "இரும்பு / பிளாஸ்டிக்", icon: "bi-gear-wide-connected", color: "#B24A2A" },
+    { value: "pithalai", label: "பித்தளை", icon: "bi-award", color: "#C47B28" },
+    { value: "chembu", label: "செம்பு", icon: "bi-circle-half", color: "#B85C38" },
+    { value: "aluminium", label: "அலுமினியம்", icon: "bi-box-seam", color: "#5C7896" }
   ];
   const catByValue = Object.fromEntries(CATEGORIES.map(c => [c.value, c]));
 
   let RECORDS = [];        // full cache from DB
   let sortAsc = false;     // date sort direction (default newest first)
   let pendingDeleteId = null;
+  let selectedDashboardMonth = "";
 
   const fmtMoney = (n) => "₹" + Number(n).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fmtDate = (iso) => new Date(iso + "T00:00:00").toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
@@ -25,7 +29,16 @@
   };
 
   // ---------------- INIT ----------------
-  document.addEventListener("DOMContentLoaded", init);
+  document.addEventListener("DOMContentLoaded", () => {
+    if (window.__AUTHENTICATED__) init();
+  });
+
+  window.startScrapLedger = () => {
+    if (!window.__SCRAP_LEDGER_STARTED__) {
+      window.__SCRAP_LEDGER_STARTED__ = true;
+      init();
+    }
+  };
 
   async function init() {
     populateCategorySelects();
@@ -35,6 +48,8 @@
     bindExport();
     bindModal();
     bindReportsControl();
+    bindDashboardControl();
+    bindImport();
 
     const statusEl = document.getElementById("dbStatus");
     try {
@@ -52,9 +67,9 @@
 
   async function reload() {
     RECORDS = await ScrapDB.getAll();
+    populateMonthSelects();
     renderDashboard();
     renderHistory();
-    populateMonthSelects();
     renderReports();
   }
 
@@ -106,7 +121,7 @@
     const currentYm = todayISO().slice(0, 7);
     if (!months.includes(currentYm)) months.unshift(currentYm);
 
-    const targets = ["#filterMonth", "#reportMonth", "#exportMonthSelect"];
+    const targets = ["#filterMonth", "#reportMonth", "#exportMonthSelect", "#dashboardMonth"];
     targets.forEach(sel => {
       const el = document.querySelector(sel);
       const keepFirst = sel === "#filterMonth"; // "All months" option
@@ -122,20 +137,25 @@
         opt.value = ym; opt.textContent = monthLabelFull(ym);
         el.appendChild(opt);
       });
-      if (prevValue && [...el.options].some(o => o.value === prevValue)) el.value = prevValue;
+      if (sel === "#dashboardMonth" && selectedDashboardMonth && months.includes(selectedDashboardMonth)) el.value = selectedDashboardMonth;
+      else if (prevValue && [...el.options].some(o => o.value === prevValue)) el.value = prevValue;
       else if (!keepFirst) el.value = currentYm;
+      if (sel === "#dashboardMonth") selectedDashboardMonth = el.value || currentYm;
     });
   }
 
   // ---------------- DASHBOARD ----------------
   function renderDashboard() {
-    const total = RECORDS.reduce((s, r) => s + Number(r.amount), 0);
+    const selectedYm = selectedDashboardMonth || todayISO().slice(0, 7);
+    const selectedRows = RECORDS.filter(r => monthKey(r.date) === selectedYm);
+    const total = selectedRows.reduce((s, r) => s + Number(r.amount), 0);
+    document.getElementById("dashboardMonthLabel").textContent = monthLabelFull(selectedYm);
     document.getElementById("totalIncome").textContent = total.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    document.getElementById("totalEntries").textContent = RECORDS.length;
+    document.getElementById("totalEntries").textContent = selectedRows.length;
 
     const grid = document.getElementById("categoryCards");
     grid.innerHTML = CATEGORIES.map((c, i) => {
-      const rows = RECORDS.filter(r => r.category === c.value);
+      const rows = selectedRows.filter(r => r.category === c.value);
       const sum = rows.reduce((s, r) => s + Number(r.amount), 0);
       const tilt = i % 2 === 0 ? "-0.6deg" : "0.7deg";
       return `<div class="tag-card" style="--tilt:${tilt}">
@@ -146,15 +166,15 @@
       </div>`;
     }).join("");
 
-    // recent entries (last 6)
-    const recent = RECORDS.slice().sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id).slice(0, 6);
-    const tbody = document.querySelector("#recentTable tbody");
-    tbody.innerHTML = recent.map(rowHtml).join("");
-    document.getElementById("recentEmpty").hidden = recent.length !== 0;
-    document.getElementById("recentTable").style.display = recent.length ? "" : "none";
-
     ScrapCharts.renderMonthly(document.getElementById("chartMonthly"), RECORDS);
     ScrapCharts.renderCategoryPie(document.getElementById("chartCategoryPie"), RECORDS, CATEGORIES);
+  }
+
+  function bindDashboardControl() {
+    document.getElementById("dashboardMonth").addEventListener("change", (event) => {
+      selectedDashboardMonth = event.target.value;
+      renderDashboard();
+    });
   }
 
   function rowHtml(r, withActions) {
@@ -298,6 +318,10 @@
 
     const tbody = document.querySelector("#historyTable tbody");
     tbody.innerHTML = rows.map(r => rowHtml(r, true)).join("");
+    const total = rows.reduce((sum, row) => sum + Number(row.amount), 0);
+    document.getElementById("historySummary").textContent = month
+      ? `${monthLabelFull(month)} · ${fmtMoney(total)} · ${rows.length} ${rows.length === 1 ? "record" : "records"}`
+      : `All records · ${fmtMoney(total)} · ${rows.length} ${rows.length === 1 ? "record" : "records"}`;
     document.getElementById("historyEmpty").hidden = rows.length !== 0;
     document.getElementById("historyTable").style.display = rows.length ? "" : "none";
   }
@@ -325,6 +349,70 @@
   // ---------------- REPORTS ----------------
   function bindReportsControl() {
     document.getElementById("reportMonth").addEventListener("change", renderReports);
+  }
+
+  // ---------------- EXCEL IMPORT ----------------
+  function bindImport() {
+    const fileInput = document.getElementById("excelFile");
+    const importButton = document.getElementById("importExcelBtn");
+    const cancelButton = document.getElementById("cancelImportBtn");
+    let selectedFile = null;
+
+    fileInput.addEventListener("change", () => {
+      selectedFile = fileInput.files?.[0] || null;
+      document.getElementById("importFileName").textContent = selectedFile ? selectedFile.name : "No file selected";
+      importButton.disabled = !selectedFile;
+      cancelButton.hidden = !selectedFile;
+      showImportMessage("");
+    });
+    cancelButton.addEventListener("click", () => {
+      selectedFile = null;
+      fileInput.value = "";
+      document.getElementById("importFileName").textContent = "No file selected";
+      importButton.disabled = true;
+      cancelButton.hidden = true;
+      showImportMessage("");
+    });
+    importButton.addEventListener("click", async () => {
+      if (!selectedFile) return;
+      importButton.disabled = true;
+      importButton.innerHTML = '<i class="bi bi-arrow-repeat"></i> Reading file…';
+      showImportMessage("");
+      try {
+        const result = await ScrapImport.readFile(selectedFile, CATEGORIES, RECORDS);
+        for (const record of result.records) await ScrapDB.add(record);
+        await reload();
+        const errorText = result.errors.length ? ` ${result.errors.length} row${result.errors.length === 1 ? "" : "s"} skipped.` : "";
+        showImportMessage(`Imported ${result.records.length} record${result.records.length === 1 ? "" : "s"}.${errorText}`, !!result.records.length);
+        renderImportErrors(result.errors);
+        if (result.records.length) {
+          selectedFile = null;
+          fileInput.value = "";
+          document.getElementById("importFileName").textContent = "No file selected";
+          cancelButton.hidden = true;
+        }
+      } catch (error) {
+        showImportMessage(error.message || "Could not import this Excel file.", false);
+        renderImportErrors([]);
+      } finally {
+        importButton.disabled = !selectedFile;
+        importButton.innerHTML = '<i class="bi bi-cloud-arrow-up"></i> Import records';
+      }
+    });
+  }
+
+  function showImportMessage(message, success) {
+    const el = document.getElementById("importToast");
+    el.textContent = message;
+    el.hidden = !message;
+    el.classList.toggle("is-error", message && !success);
+  }
+
+  function renderImportErrors(errors) {
+    const el = document.getElementById("importErrors");
+    if (!errors.length) { el.hidden = true; el.innerHTML = ""; return; }
+    el.innerHTML = `<strong>Rows skipped</strong><ul>${errors.slice(0, 12).map(error => `<li>Row ${error.row}: ${escapeHtml(error.message)}</li>`).join("")}</ul>${errors.length > 12 ? `<p>And ${errors.length - 12} more row${errors.length - 12 === 1 ? "" : "s"}.</p>` : ""}`;
+    el.hidden = false;
   }
 
   function renderReports() {

@@ -6,7 +6,7 @@ const ScrapCharts = (() => {
   let pieChart = null;
   let comparisonChart = null;
 
-  const PALETTE = ["#B24A2A", "#B4862B", "#4C6B57"];
+  const PALETTE = ["#B4862B", "#4C6B57", "#B24A2A", "#C47B28", "#B85C38", "#5C7896"];
 
   function monthLabel(ym) {
     const [y, m] = ym.split("-");
