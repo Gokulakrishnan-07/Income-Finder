@@ -26,7 +26,13 @@
       credentials: "same-origin"
     });
     const body = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(body.error || "Authentication failed.");
+    if (!response.ok) {
+      const error = new Error(body.error || "Authentication failed.");
+      error.code = body.code;
+      error.status = response.status;
+      error.missing = body.missing;
+      throw error;
+    }
     return body;
   }
 
@@ -68,7 +74,9 @@
         form.reset();
         showTracker();
       } catch (error) {
-        loginError().textContent = "Invalid username or password. Please try again.";
+        loginError().textContent = error.code === "AUTH_CONFIG_MISSING"
+          ? "Authentication is not configured. Set AUTH_USERNAME, AUTH_PASSWORD, and SESSION_SECRET in Netlify."
+          : "Invalid username or password.";
         loginError().hidden = false;
       } finally {
         button.disabled = false;

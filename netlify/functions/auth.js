@@ -44,9 +44,11 @@ function verifySession(token) {
 }
 
 exports.handler = async (event) => {
-  if (!process.env.AUTH_USERNAME || !process.env.AUTH_PASSWORD || !process.env.SESSION_SECRET) {
-    return json(503, { error: "Authentication is not configured." });
+  const missing = ["AUTH_USERNAME", "AUTH_PASSWORD", "SESSION_SECRET"].filter(name => !process.env[name]);
+  if (missing.length) {
+    return json(503, { error: "Authentication is not configured.", code: "AUTH_CONFIG_MISSING", missing });
   }
+  const configuredUsername = process.env.AUTH_USERNAME.trim();
   const session = verifySession(getCookie(event.headers));
   if (event.httpMethod === "GET") return json(200, { authenticated: !!session, user: session ? { username: session.sub } : null });
   if (event.httpMethod === "DELETE") return json(200, { authenticated: false }, { "Set-Cookie": cookieOptions("", 0) });
@@ -54,8 +56,8 @@ exports.handler = async (event) => {
 
   let input;
   try { input = JSON.parse(event.body || "{}"); } catch (_) { return json(400, { error: "Invalid request." }); }
-  const validUser = typeof input.username === "string" && equals(input.username, process.env.AUTH_USERNAME);
+  const validUser = typeof input.username === "string" && equals(input.username, configuredUsername);
   const validPassword = typeof input.password === "string" && equals(input.password, process.env.AUTH_PASSWORD);
   if (!validUser || !validPassword) return json(401, { error: "Invalid credentials." });
-  return json(200, { authenticated: true, user: { username: process.env.AUTH_USERNAME } }, { "Set-Cookie": cookieOptions(createSession(process.env.AUTH_USERNAME)) });
+  return json(200, { authenticated: true, user: { username: configuredUsername } }, { "Set-Cookie": cookieOptions(createSession(configuredUsername)) });
 };
